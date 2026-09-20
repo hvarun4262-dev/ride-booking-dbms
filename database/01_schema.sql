@@ -71,14 +71,15 @@ CREATE TABLE payments (
     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Ratings Table
+-- Ratings Table (Updated for data integrity)
 CREATE TABLE ratings (
     rating_id SERIAL PRIMARY KEY,
     ride_id INT NOT NULL REFERENCES rides(ride_id) ON DELETE CASCADE,
+    reviewer_id INT NOT NULL, -- NEW: Tracks exactly who gave the rating
     reviewer_type reviewer_type_enum NOT NULL,
     score INT NOT NULL CHECK (score >= 1 AND score <= 5),
     review TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- A rider or driver can only review a specific ride once
-    UNIQUE (ride_id, reviewer_type)
+    -- Ensure the specific reviewer can only rate this specific ride once
+    UNIQUE (ride_id, reviewer_type, reviewer_id)
 );
