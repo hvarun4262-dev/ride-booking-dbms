@@ -1,8 +1,11 @@
--- ENUMs for State Transitions (Critical for Swiggy/Rapido logic)
+-- ENUMERATED TYPES (State & Categorization)
+
 CREATE TYPE driver_status_enum AS ENUM ('available', 'busy', 'offline');
 CREATE TYPE ride_status_enum AS ENUM ('requested', 'accepted', 'ongoing', 'completed', 'cancelled');
 CREATE TYPE payment_status_enum AS ENUM ('pending', 'completed', 'failed');
 CREATE TYPE reviewer_type_enum AS ENUM ('rider', 'driver');
+CREATE TYPE vehicle_type_enum AS ENUM ('bike', 'auto', 'mini', 'sedan', 'suv');
+
 
 -- Riders Table
 CREATE TABLE riders (
@@ -10,31 +13,48 @@ CREATE TABLE riders (
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Drivers Table
+-- Drivers Table (Updated with Vehicle Info)
 CREATE TABLE drivers (
     driver_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) UNIQUE NOT NULL,
     vehicle_number VARCHAR(20) UNIQUE NOT NULL,
+    vehicle_type vehicle_type_enum NOT NULL,
+    passenger_capacity INT NOT NULL CHECK (passenger_capacity > 0 AND passenger_capacity <= 8),
     city VARCHAR(50) NOT NULL,
     status driver_status_enum DEFAULT 'offline',
     rating DECIMAL(3, 2) DEFAULT 5.00 CHECK (rating >= 1.00 AND rating <= 5.00),
-    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Rides Table (The Core Entity)
+
+-- Rides Table (The Core Engine)
 CREATE TABLE rides (
     ride_id SERIAL PRIMARY KEY,
     rider_id INT NOT NULL REFERENCES riders(rider_id) ON DELETE CASCADE,
     driver_id INT REFERENCES drivers(driver_id) ON DELETE SET NULL,
-    pickup_location TEXT NOT NULL,
-    dropoff_location TEXT NOT NULL,
     city VARCHAR(50) NOT NULL,
+    
+    -- Geospatial & Address Data
+    pickup_address TEXT NOT NULL,
+    dropoff_address TEXT NOT NULL,
+    pickup_lat DECIMAL(9, 6) NOT NULL,
+    pickup_lng DECIMAL(9, 6) NOT NULL,
+    dropoff_lat DECIMAL(9, 6) NOT NULL,
+    dropoff_lng DECIMAL(9, 6) NOT NULL,
+    
+    -- Ride Preferences & Metrics
+    requested_vehicle_type vehicle_type_enum NOT NULL,
     distance_km DECIMAL(5, 2) NOT NULL CHECK (distance_km > 0),
+    surge_multiplier DECIMAL(3, 2) DEFAULT 1.00 CHECK (surge_multiplier >= 1.00),
     fare DECIMAL(10, 2) NOT NULL CHECK (fare >= 0),
+    
+    -- Status & Timestamps
     status ride_status_enum DEFAULT 'requested',
     requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     accepted_at TIMESTAMP,
@@ -51,7 +71,7 @@ CREATE TABLE payments (
     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Ratings Table (For Window Functions Later)
+-- Ratings Table
 CREATE TABLE ratings (
     rating_id SERIAL PRIMARY KEY,
     ride_id INT NOT NULL REFERENCES rides(ride_id) ON DELETE CASCADE,
@@ -59,6 +79,6 @@ CREATE TABLE ratings (
     score INT NOT NULL CHECK (score >= 1 AND score <= 5),
     review TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- Ensure a rider or driver can only rate a specific ride once
+    -- A rider or driver can only review a specific ride once
     UNIQUE (ride_id, reviewer_type)
 );
