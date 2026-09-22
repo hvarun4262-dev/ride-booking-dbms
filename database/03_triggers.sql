@@ -38,8 +38,9 @@ BEGIN
         WHERE driver_id = NEW.driver_id 
         FOR UPDATE; 
 
-        IF v_driver_status = 'busy' THEN
-            RAISE EXCEPTION 'Concurrency Error: Driver % is already busy with another ride.', NEW.driver_id;
+        -- STRICT WHITELIST: If the driver is anything other than 'available', reject it.
+        IF v_driver_status != 'available' THEN
+            RAISE EXCEPTION 'State Error: Driver % is currently % and cannot accept a new ride.', NEW.driver_id, v_driver_status;
         END IF;
     END IF;
     
