@@ -71,7 +71,12 @@ SELECT
     COUNT(ride_id) AS total_requests,
     ROUND(AVG(surge_multiplier), 2) AS avg_surge_multiplier,
     COUNT(ride_id) FILTER (WHERE status = 'completed') AS completed_rides,
-    COUNT(ride_id) FILTER (WHERE status = 'cancelled') AS cancelled_rides
+    
+    -- Calculating true cancellation percentage
+    ROUND(
+        100.0 * COUNT(ride_id) FILTER (WHERE status = 'cancelled') / NULLIF(COUNT(ride_id), 0), 
+        2
+    ) AS cancellation_rate_pct
 FROM rides
 GROUP BY hour_of_day
 ORDER BY total_requests DESC;
@@ -95,8 +100,9 @@ SELECT
     ROUND(drv.avg_rating_from_drivers, 2) AS avg_driver_rating,
     COUNT(rd.ride_id) FILTER (WHERE rd.status = 'cancelled') AS lifetime_cancellations
 FROM riders r
-JOIN driver_reviews_of_riders drv ON r.rider_id = drv.rider_id
-JOIN rides rd ON r.rider_id = rd.rider_id
+LEFT JOIN driver_reviews_of_riders drv ON r.rider_id = drv.rider_id
+LEFT JOIN rides rd ON r.rider_id = rd.rider_id
 GROUP BY r.rider_id, r.name, drv.avg_rating_from_drivers
-HAVING AVG(drv.avg_rating_from_drivers) < 3.5 OR COUNT(rd.ride_id) FILTER (WHERE rd.status = 'cancelled') >= 3
-ORDER BY avg_driver_rating ASC, lifetime_cancellations DESC;
+HAVING drv.avg_rating_from_drivers < 3.5 
+    OR COUNT(rd.ride_id) FILTER (WHERE rd.status = 'cancelled') >= 3
+ORDER BY lifetime_cancellations DESC, avg_driver_rating ASC;
