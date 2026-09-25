@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import DatabaseError
@@ -36,11 +36,19 @@ class RideRequest(BaseModel):
 class AcceptRideRequest(BaseModel):
     driver_id: int
 
+
 class RatingRequest(BaseModel):
     rider_id: int | None = None
     driver_id: int | None = None
-    score: int
+    score: int = Field(..., ge=1, le=5) # Validates score is between 1 and 5
     review: str | None = None
+
+    @model_validator(mode='after')
+    def check_exclusive_arc(self):
+        # ^ (XOR) ensures exactly one is True. If both are given, or neither is given, it fails.
+        if bool(self.rider_id) == bool(self.driver_id):
+            raise ValueError('Must provide exactly one of rider_id or driver_id')
+        return self
 
 # 3. API ENDPOINTS
 
@@ -69,24 +77,26 @@ def request_ride(ride: RideRequest, db: Session = Depends(get_db)):
 
 @app.put("/rides/{ride_id}/accept")
 def accept_ride(ride_id: int, req: AcceptRideRequest, db: Session = Depends(get_db)):
-    """Driver accepts a ride. DB handles concurrency locking and state validation."""
     try:
         query = text("""
             UPDATE rides 
             SET status = 'accepted', driver_id = :driver_id 
-            WHERE ride_id = :ride_id 
+            WHERE ride_id = :ride_id AND status = 'requested' 
             RETURNING ride_id;
         """)
         result = db.execute(query, {"driver_id": req.driver_id, "ride_id": ride_id})
         
+        # If the ride doesn't exist OR isn't in 'requested' state, it modifies 0 rows
         if not result.fetchone():
-            raise HTTPException(status_code=404, detail="Ride not found.")
+            raise HTTPException(
+                status_code=400, 
+                detail="Ride not found or is no longer available."
+            )
             
         db.commit()
-        return {"message": f"Ride {ride_id} accepted successfully by Driver {req.driver_id}."}
+        return {"message": f"Ride {ride_id} accepted successfully."}
     except DatabaseError as e:
         db.rollback()
-        # If the DB FSM or double-booking trigger fails, it throws a 400 here automatically!
         raise HTTPException(status_code=400, detail=str(e.orig))
 
 @app.put("/rides/{ride_id}/complete")
