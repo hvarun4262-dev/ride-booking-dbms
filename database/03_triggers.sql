@@ -196,3 +196,34 @@ CREATE TRIGGER trg_log_ride_status_change
 AFTER INSERT OR UPDATE OF status ON rides
 FOR EACH ROW
 EXECUTE FUNCTION log_ride_status_change();
+
+-- Updated Rating Trigger snippet
+CREATE OR REPLACE FUNCTION verify_rating_participation()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_rider_id INT;
+    v_driver_id INT;
+    v_status ride_status_enum; -- NEW: variable to hold the status
+BEGIN
+    -- Fetch the participants AND the status of the ride
+    SELECT rider_id, driver_id, status 
+    INTO v_rider_id, v_driver_id, v_status
+    FROM rides WHERE ride_id = NEW.ride_id;
+
+    -- NEW: Enforce completion rule
+    IF v_status != 'completed' THEN
+        RAISE EXCEPTION 'Business Rule Error: Ratings can only be submitted for completed rides.';
+    END IF;
+
+    -- Check rider participation
+    IF NEW.rider_id IS NOT NULL AND NEW.rider_id != v_rider_id THEN
+        RAISE EXCEPTION 'Integrity Error: This rider did not participate in this ride.';
+    
+    -- Check driver participation
+    ELSIF NEW.driver_id IS NOT NULL AND NEW.driver_id != v_driver_id THEN
+        RAISE EXCEPTION 'Integrity Error: This driver did not drive this ride.';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
