@@ -77,14 +77,19 @@ SELECT
 FROM rides;
 
 
--- 5. Generate Ratings (~70% of riders leave a rating)
-INSERT INTO ratings (ride_id, reviewer_id, reviewer_type, score, review, created_at)
-SELECT 
+
+
+-- 5. Generate rider-to-driver ratings for completed rides
+
+INSERT INTO ratings (ride_id, rider_id, driver_id, score, review, created_at)
+SELECT
     ride_id,
     rider_id,
-    'rider'::reviewer_type_enum,
-    (random() * 2 + 3)::INT, -- Scores between 3 and 5
+    NULL,
+    (random() * 2 + 3)::INT,
     'Great ride!',
-    completed_at + interval '1 hour'
+    completed_at - INTERVAL '1 hour'
 FROM rides
-WHERE random() > 0.3;
+WHERE status = 'completed'
+  AND driver_id IS NOT NULL
+  AND random() > 0.3;
