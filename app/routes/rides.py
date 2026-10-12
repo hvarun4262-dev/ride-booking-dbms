@@ -73,6 +73,30 @@ def accept_ride(ride_id: int, req: AcceptRideRequest, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e.orig))
 
+@router.put("/{ride_id}/start")
+def start_ride(ride_id: int, db: Session = Depends(get_db)):
+    try:
+        query = text("""
+            UPDATE rides
+            SET status = 'ongoing'
+            WHERE ride_id = :ride_id
+              AND status = 'accepted'
+            RETURNING ride_id;
+        """)
+        result = db.execute(query, {"ride_id": ride_id})
+
+        if not result.fetchone():
+            raise HTTPException(
+                status_code=400,
+                detail="Ride not found or not in accepted status"
+            )
+        db.commit()
+        return {"message": f"Ride {ride_id} started"}
+
+    except DatabaseError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e.orig))
+
 @router.put("/{ride_id}/complete")
 def complete_ride(ride_id: int, db: Session = Depends(get_db)):
     try:
