@@ -1,9 +1,21 @@
+-- 0. CLEANUP (Allows safe re-running of the script)
+DROP TABLE IF EXISTS ratings CASCADE;
+DROP TABLE IF EXISTS payments CASCADE;
+DROP TABLE IF EXISTS ride_status_history CASCADE;
+DROP TABLE IF EXISTS rides CASCADE;
+DROP TABLE IF EXISTS drivers CASCADE;
+DROP TABLE IF EXISTS riders CASCADE;
+
+DROP TYPE IF EXISTS driver_status_enum CASCADE;
+DROP TYPE IF EXISTS ride_status_enum CASCADE;
+DROP TYPE IF EXISTS payment_status_enum CASCADE;
+DROP TYPE IF EXISTS vehicle_type_enum CASCADE;
+
 -- 1. ENUMERATED TYPES
 CREATE TYPE driver_status_enum AS ENUM ('available', 'busy', 'offline');
 CREATE TYPE ride_status_enum AS ENUM ('requested', 'accepted', 'ongoing', 'completed', 'cancelled');
 CREATE TYPE payment_status_enum AS ENUM ('pending', 'completed', 'failed');
 CREATE TYPE vehicle_type_enum AS ENUM ('bike', 'auto', 'mini', 'sedan', 'suv');
-
 
 -- 2. CORE ENTITIES
 CREATE TABLE riders (
@@ -11,8 +23,8 @@ CREATE TABLE riders (
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE drivers (
@@ -25,10 +37,14 @@ CREATE TABLE drivers (
     city VARCHAR(50) NOT NULL,
     status driver_status_enum NOT NULL DEFAULT 'offline',
     rating DECIMAL(3, 2) NOT NULL DEFAULT 5.00 CHECK (rating >= 1.00 AND rating <= 5.00),
-    joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    
+    -- Added location columns for nearest driver matching
+    current_lat DECIMAL(9, 6) CHECK (current_lat BETWEEN -90 AND 90),
+    current_lng DECIMAL(9, 6) CHECK (current_lng BETWEEN -180 AND 180),
+    
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 
 -- 3. TRANSACTIONAL ENTITIES
 CREATE TABLE rides (
@@ -55,11 +71,11 @@ CREATE TABLE rides (
     
     status ride_status_enum NOT NULL DEFAULT 'requested',
     
-    requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    accepted_at TIMESTAMP,
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    cancelled_at TIMESTAMP
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    accepted_at TIMESTAMPTZ,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ
 );
 
 CREATE TABLE ride_status_history (
@@ -67,7 +83,7 @@ CREATE TABLE ride_status_history (
     ride_id INT NOT NULL REFERENCES rides(ride_id) ON DELETE CASCADE,
     old_status ride_status_enum, -- Nullable: First entry has no old status
     new_status ride_status_enum NOT NULL,
-    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE payments (
@@ -76,7 +92,7 @@ CREATE TABLE payments (
     amount DECIMAL(10, 2) NOT NULL CHECK (amount >= 0),
     payment_method VARCHAR(50), -- Nullable: Unknown until the user actually pays
     status payment_status_enum NOT NULL DEFAULT 'pending',
-    processed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE ratings (
@@ -89,7 +105,7 @@ CREATE TABLE ratings (
     
     score INT NOT NULL CHECK (score >= 1 AND score <= 5),
     review TEXT, -- Nullable: Optional text review
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     -- ...but the CHECK constraint enforces that exactly ONE is strictly NOT NULL per row
     CHECK (
