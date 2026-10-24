@@ -1,10 +1,20 @@
+-- 0. CLEANUP (Allows safe re-running of the script)
+DROP INDEX IF EXISTS idx_rides_rider_id;
+DROP INDEX IF EXISTS idx_rides_driver_id;
+DROP INDEX IF EXISTS idx_ratings_rider_id;
+DROP INDEX IF EXISTS idx_ratings_driver_id;
+DROP INDEX IF EXISTS idx_history_ride_id;
+DROP INDEX IF EXISTS idx_rides_requested_at;
+DROP INDEX IF EXISTS idx_rides_completed_at;
+DROP INDEX IF EXISTS idx_rides_pickup_coords;
+DROP INDEX IF EXISTS idx_rides_dropoff_coords;
+DROP INDEX IF EXISTS idx_drivers_available_city;
+DROP INDEX IF EXISTS idx_rides_active_users;
+
 -- 1. FOREIGN KEY INDEXES (Crucial for JOIN performance)
 -- PostgreSQL does NOT automatically index foreign keys. These prevent full table scans.
-
 CREATE INDEX idx_rides_rider_id ON rides(rider_id);
 CREATE INDEX idx_rides_driver_id ON rides(driver_id);
-CREATE INDEX idx_payments_ride_id ON payments(ride_id);
-CREATE INDEX idx_ratings_ride_id ON ratings(ride_id);
 CREATE INDEX idx_ratings_rider_id ON ratings(rider_id);
 CREATE INDEX idx_ratings_driver_id ON ratings(driver_id);
 CREATE INDEX idx_history_ride_id ON ride_status_history(ride_id);
@@ -32,7 +42,7 @@ CREATE INDEX idx_drivers_available_city
 ON drivers(city) 
 WHERE status = 'available';
 
--- Instantly look up active rides (ignoring the millions of completed/cancelled rides)
-CREATE INDEX idx_rides_active 
-ON rides(ride_id) 
+-- Instantly look up if a user/driver is already in an active ride (ignoring the millions of completed/cancelled rides)
+CREATE INDEX idx_rides_active_users 
+ON rides(rider_id, driver_id) 
 WHERE status IN ('requested', 'accepted', 'ongoing');
