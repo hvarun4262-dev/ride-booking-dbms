@@ -197,33 +197,45 @@ AFTER INSERT OR UPDATE OF status ON rides
 FOR EACH ROW
 EXECUTE FUNCTION log_ride_status_change();
 
--- Updated Rating Trigger snippet
+-- MERGED: Verify if the rater actually participated in the ride
 CREATE OR REPLACE FUNCTION verify_rating_participation()
 RETURNS TRIGGER AS $$
-DECLARE
-    v_rider_id INT;
-    v_driver_id INT;
-    v_status ride_status_enum; -- NEW: variable to hold the status
 BEGIN
-    -- Fetch the participants AND the status of the ride
-    SELECT rider_id, driver_id, status 
-    INTO v_rider_id, v_driver_id, v_status
-    FROM rides WHERE ride_id = NEW.ride_id;
-
-    -- NEW: Enforce completion rule
-    IF v_status != 'completed' THEN
-        RAISE EXCEPTION 'Business Rule Error: Ratings can only be submitted for completed rides.';
+    IF NEW.rater_type = 'rider' THEN
+        IF NOT EXISTS (SELECT 1 FROM rides WHERE id = NEW.ride_id AND rider_id = NEW.rater_id) THEN
+            RAISE EXCEPTION 'Rider did not participate in this ride';
+        END IF;
+    ELSIF NEW.rater_type = 'driver' THEN
+        IF NOT EXISTS (SELECT 1 FROM rides WHERE id = NEW.ride_id AND driver_id = NEW.rater_id) THEN
+            RAISE EXCEPTION 'Driver did not participate in this ride';
+        END IF;
     END IF;
-
-    -- Check rider participation
-    IF NEW.rider_id IS NOT NULL AND NEW.rider_id != v_rider_id THEN
-        RAISE EXCEPTION 'Integrity Error: This rider did not participate in this ride.';
-    
-    -- Check driver participation
-    ELSIF NEW.driver_id IS NOT NULL AND NEW.driver_id != v_driver_id THEN
-        RAISE EXCEPTION 'Integrity Error: This driver did not drive this ride.';
-    END IF;
-
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_rating_participation
+BEFORE INSERT ON ratings
+FOR EACH ROW EXECUTE FUNCTION verify_rating_participation();
+
+-- NEW: Automatically update driver's average rating
+CREATE OR REPLACE FUNCTION update_driver_rating_avg()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.rater_type = 'rider' THEN
+        UPDATE drivers
+        SET rating = (
+            SELECT ROUND(AVG(score), 2)
+            FROM ratings
+            WHERE ride_id IN (SELECT id FROM rides WHERE driver_id = drivers.id)
+              AND rater_type = 'rider'
+        )
+        WHERE id = (SELECT driver_id FROM rides WHERE id = NEW.ride_id);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_driver_rating
+AFTER INSERT ON ratings
+FOR EACH ROW EXECUTE FUNCTION update_driver_rating_avg();
