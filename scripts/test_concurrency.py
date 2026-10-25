@@ -1,43 +1,36 @@
-import requests
-import concurrent.futures
-import time
+import asyncio
+import httpx
 
-# Ensure your FastAPI server is running on port 8000 before executing this
-BASE_URL = "http://127.0.0.1:8000/rides"
-RIDE_ID = 4 # Make sure Ride 4 exists in your DB and has status = 'requested'
+async def attempt_accept(client, driver_id, ride_id):
+    # Uses the shared client to prevent TCP handshake delays
+    response = await client.post(
+        f"http://127.0.0.1:8000/rides/{ride_id}/accept", 
+        json={"driver_id": driver_id}
+    )
+    return response
 
-def driver_accepts_ride(driver_id):
-    """Simulates a driver hitting the 'accept' API endpoint."""
-    print(f"[Driver {driver_id}] Attempting to accept Ride {RIDE_ID}...")
+async def test_driver_double_booking_lock():
+    driver_id = 1
+    # NOTE: Ensure rides 101 and 102 actually exist in your DB and are in 'requested' status
+    ride_id_1 = 101 
+    ride_id_2 = 102 
     
-    # We use PUT as defined in our FastAPI routes
-    url = f"{BASE_URL}/{RIDE_ID}/accept"
-    payload = {"driver_id": driver_id}
+    # Open a single client session for true concurrent firing
+    async with httpx.AsyncClient() as client:
+        # asyncio.gather fires both requests at the exact same millisecond
+        results = await asyncio.gather(
+            attempt_accept(client, driver_id, ride_id_1),
+            attempt_accept(client, driver_id, ride_id_2)
+        )
     
-    # Record exactly when the request was sent
-    start_time = time.time()
-    response = requests.put(url, json=payload)
-    end_time = time.time()
+    status_codes = [res.status_code for res in results]
+    print(f"Server returned status codes: {status_codes}")
     
-    elapsed = round((end_time - start_time) * 1000, 2)
+    # Assertions with helpful error messages
+    assert 200 in status_codes, "Neither request succeeded. Did you seed rides 101 and 102 as 'requested'?"
+    assert status_codes.count(200) == 1, "Race condition failed! The lock allowed the driver to accept both."
     
-    if response.status_code == 200:
-        print(f"✅ [Driver {driver_id}] SUCCESS in {elapsed}ms! {response.json()}")
-    else:
-        print(f"❌ [Driver {driver_id}] FAILED in {elapsed}ms. Reason: {response.json()}")
-
-def run_race_condition():
-    print(f"--- STARTING CONCURRENCY TEST FOR RIDE {RIDE_ID} ---")
-    
-    # ThreadPoolExecutor fires both functions simultaneously
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # Driver 10 and Driver 11 race to accept the ride
-        executor.submit(driver_accepts_ride, 10)
-        executor.submit(driver_accepts_ride, 11)
-        
-    print("--- TEST COMPLETE ---")
+    print("✅ Concurrency test passed! Lock successfully prevented the driver from double-booking.")
 
 if __name__ == "__main__":
-    # You will need to pip install requests if you haven't already:
-    # pip install requests
-    run_race_condition()
+    asyncio.run(test_driver_double_booking_lock())
