@@ -1,17 +1,22 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Read the URL, falling back to a default if not found
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/ride_booking_db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Rest of your SQLAlchemy / databases connection setup...
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is missing from .env")
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
 
 def get_db():
     db = SessionLocal()
