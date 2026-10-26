@@ -50,7 +50,7 @@ def request_ride(payload: RideRequestSchema, db: Session = Depends(get_db)):
         SELECT driver_id FROM drivers 
         WHERE status = 'available' 
           AND city = :city 
-          AND vehicle_type = :v_type::vehicle_type_enum
+          AND vehicle_type = CAST(:v_type AS vehicle_type_enum)
         ORDER BY (
             6371 * acos(
                 cos(radians(:pickup_lat)) * cos(radians(current_lat)) * 
