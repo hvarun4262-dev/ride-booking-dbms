@@ -1,86 +1,68 @@
 -- MASS DATA GENERATION SCRIPT (100 Riders, 50 Drivers, 1000 Rides)
--- PostgreSQL procedural generation for load testing.
-
-
--- Clear existing data safely
 TRUNCATE TABLE ratings, payments, rides, drivers, riders RESTART IDENTITY CASCADE;
 
-
--- 1. Generate 100 Riders (With Realistic Names)
+-- 1. Generate 100 Riders
 WITH name_arrays AS (
-    SELECT 
-        ARRAY['Rahul', 'Amit', 'Sneha', 'Priya', 'Kavya', 'Vikram', 'Arjun', 'Neha', 'Rohan', 'Aditi'] AS first_names,
-        ARRAY['Sharma', 'Patel', 'Kumar', 'Reddy', 'Singh', 'Gupta', 'Rao', 'Joshi', 'Nair', 'Das'] AS last_names
+    SELECT ARRAY['Rahul', 'Amit', 'Sneha', 'Priya', 'Kavya', 'Vikram', 'Arjun', 'Neha', 'Rohan', 'Aditi'] AS first_names,
+           ARRAY['Sharma', 'Patel', 'Kumar', 'Reddy', 'Singh', 'Gupta', 'Rao', 'Joshi', 'Nair', 'Das'] AS last_names
 )
 INSERT INTO riders (name, phone, email)
 SELECT 
     first_names[ (random() * 9 + 1)::INT ] || ' ' || last_names[ (random() * 9 + 1)::INT ], 
-    '9' || LPAD((random() * 999999999)::INT::text, 9, '0'), -- Generates random 10-digit Indian numbers 
+    '9' || LPAD((random() * 999999999)::INT::text, 9, '0'),
     'user' || id || '@example.com'
 FROM generate_series(1, 100) AS id, name_arrays;
 
-
--- 2. Generate 50 Drivers (With Realistic Names)
+-- 2. Generate 50 Drivers (FIXED: Added current_lat and current_lng)
 WITH name_arrays AS (
-    SELECT 
-        ARRAY['Suresh', 'Ramesh', 'Imran', 'John', 'Ravi', 'Manoj', 'Karthik', 'Syed', 'Abdul', 'Dinesh'] AS first_names,
-        ARRAY['Gowda', 'Khan', 'Shetty', 'Doe', 'Teja', 'Hassan', 'Iyer', 'Yadav', 'Desai', 'Naidu'] AS last_names
+    SELECT ARRAY['Suresh', 'Ramesh', 'Imran', 'John', 'Ravi', 'Manoj', 'Karthik', 'Syed', 'Abdul', 'Dinesh'] AS first_names,
+           ARRAY['Gowda', 'Khan', 'Shetty', 'Doe', 'Teja', 'Hassan', 'Iyer', 'Yadav', 'Desai', 'Naidu'] AS last_names
 )
-INSERT INTO drivers (name, phone, vehicle_number, vehicle_type, passenger_capacity, city)
+INSERT INTO drivers (name, phone, vehicle_number, vehicle_type, passenger_capacity, city, current_lat, current_lng, status)
 SELECT 
     first_names[ (random() * 9 + 1)::INT ] || ' ' || last_names[ (random() * 9 + 1)::INT ], 
     '8' || LPAD((random() * 999999999)::INT::text, 9, '0'), 
-    'KA-' || LPAD((random() * 99 + 1)::INT::text, 2, '0') || '-AB-' || LPAD((random() * 9999 + 1)::INT::text, 4, '0'), -- Realistic plates like KA-05-AB-1234
+    'KA-' || LPAD((random() * 99 + 1)::INT::text, 2, '0') || '-AB-' || LPAD((random() * 9999 + 1)::INT::text, 4, '0'),
     CAST((ARRAY['bike', 'auto', 'mini', 'sedan', 'suv'])[ (id % 5) + 1 ] AS vehicle_type_enum),
     (ARRAY[1, 3, 4, 4, 6])[ (id % 5) + 1 ],
-    CAST((ARRAY['Bengaluru', 'Mysuru', 'Hubli'])[ (id % 3) + 1 ] AS VARCHAR)
+    CAST((ARRAY['Bengaluru', 'Mysuru', 'Hubli'])[ (id % 3) + 1 ] AS VARCHAR),
+    12.9000 + (random() * 0.1), -- Random Lat
+    77.5000 + (random() * 0.1), -- Random Lng
+    'available'::driver_status_enum
 FROM generate_series(1, 50) AS id, name_arrays;
 
-
--- 3. Generate 1,000 Rides (Distributed over last 30 days)
+-- 3. Generate 1,000 Rides
 INSERT INTO rides (
     rider_id, driver_id, city, pickup_address, dropoff_address, 
     pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, 
-    requested_vehicle_type, distance_km, surge_multiplier, fare, status, 
-    requested_at
+    requested_vehicle_type, distance_km, surge_multiplier, fare, status, requested_at
 )
 SELECT 
-    (random() * 99 + 1)::INT, -- random rider_id (1 to 100)
-    (random() * 49 + 1)::INT, -- random driver_id (1 to 50)
+    (random() * 99 + 1)::INT, 
+    (random() * 49 + 1)::INT, 
     'Bengaluru', 
     'Random Point A', 'Random Point B', 
     12.9000 + (random() * 0.1), 77.5000 + (random() * 0.1), 
     12.9000 + (random() * 0.1), 77.5000 + (random() * 0.1), 
     CAST((ARRAY['bike', 'auto', 'mini', 'sedan', 'suv'])[ (id % 5) + 1 ] AS vehicle_type_enum),
-    ROUND((random() * 18 + 2)::numeric, 2), -- Distance: 2km to 20km
-    CASE WHEN random() > 0.8 THEN 1.50 ELSE 1.00 END, -- 20% surge probability
-    ROUND((random() * 400 + 50)::numeric, 2), -- Fare: ₹50 to ₹450
+    ROUND((random() * 18 + 2)::numeric, 2), 
+    CASE WHEN random() > 0.8 THEN 1.50 ELSE 1.00 END, 
+    ROUND((random() * 400 + 50)::numeric, 2), 
     'completed'::ride_status_enum,
-    CURRENT_TIMESTAMP - (random() * interval '30 days') -- Requested anytime in last 30 days
+    CURRENT_TIMESTAMP - (random() * interval '30 days')
 FROM generate_series(1, 1000) AS id;
 
--- Logically update the accepted and completed timestamps based on distance
 UPDATE rides 
-SET 
-    accepted_at = requested_at + (random() * interval '3 minutes'),
+SET accepted_at = requested_at + (random() * interval '3 minutes'),
     completed_at = requested_at + (random() * interval '3 minutes') + (distance_km * interval '3 minutes');
 
-
--- 4. Generate 1,000 Payments for those rides
+-- 4. Generate 1,000 Payments
 INSERT INTO payments (ride_id, amount, payment_method, status, processed_at)
-SELECT 
-    ride_id, 
-    fare, 
-    CAST((ARRAY['UPI', 'Credit Card', 'Cash'])[ (ride_id % 3) + 1 ] AS VARCHAR), 
-    'completed'::payment_status_enum,
-    completed_at + interval '1 minute'
+SELECT ride_id, fare, CAST((ARRAY['UPI', 'Credit Card', 'Cash'])[ (ride_id % 3) + 1 ] AS VARCHAR), 
+    'completed'::payment_status_enum, completed_at + interval '1 minute'
 FROM rides;
 
-
-
-
--- 5. Generate rider-to-driver ratings for completed rides
-
+-- 5. Generate Ratings (FIXED: Using the new Exclusive Arc column structure)
 INSERT INTO ratings (ride_id, rider_id, driver_id, score, review, created_at)
 SELECT
     ride_id,
@@ -88,8 +70,6 @@ SELECT
     NULL,
     (random() * 2 + 3)::INT,
     'Great ride!',
-    completed_at - INTERVAL '1 hour'
+    completed_at + INTERVAL '1 hour'
 FROM rides
-WHERE status = 'completed'
-  AND driver_id IS NOT NULL
-  AND random() > 0.3;
+WHERE status = 'completed' AND driver_id IS NOT NULL AND random() > 0.3;
