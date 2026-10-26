@@ -50,7 +50,7 @@ def request_ride(payload: RideRequestSchema, db: Session = Depends(get_db)):
         SELECT driver_id FROM drivers 
         WHERE status = 'available' 
           AND city = :city 
-          AND vehicle_type = :v_type
+          AND vehicle_type = :v_type::vehicle_type_enum
         ORDER BY (
             6371 * acos(
                 cos(radians(:pickup_lat)) * cos(radians(current_lat)) * 
@@ -68,7 +68,7 @@ def request_ride(payload: RideRequestSchema, db: Session = Depends(get_db)):
     
     driver_id = driver[0] if driver else None
 
-    # 4. Insert the requested ride (Includes all NOT NULL fields from schema)
+    # 4. Insert the requested ride (Added ::ride_status_enum cast)
     insert_query = text("""
         INSERT INTO rides (
             rider_id, driver_id, city, pickup_address, dropoff_address, 
@@ -78,7 +78,7 @@ def request_ride(payload: RideRequestSchema, db: Session = Depends(get_db)):
         VALUES (
             :rider_id, :driver_id, :city, :p_address, :d_address,
             :p_lat, :p_lng, :d_lat, :d_lng, 
-            :v_type, :dist, :surge, :fare, 'requested'
+            :v_type::vehicle_type_enum, :dist, :surge, :fare, 'requested'::ride_status_enum
         )
         RETURNING ride_id;
     """)
@@ -123,7 +123,7 @@ def accept_ride(ride_id: int, payload: DriverActionSchema, db: Session = Depends
             raise HTTPException(status_code=400, detail="Ride is no longer available")
             
         update_query = text("""
-            UPDATE rides SET status = 'accepted', driver_id = :driver_id 
+            UPDATE rides SET status = 'accepted'::ride_status_enum, driver_id = :driver_id 
             WHERE ride_id = :ride_id
         """)
         db.execute(update_query, {"driver_id": payload.driver_id, "ride_id": ride_id})
@@ -139,7 +139,7 @@ def cancel_ride(ride_id: int, db: Session = Depends(get_db)):
     """Cancels a ride and frees up the driver."""
     query = text("""
         UPDATE rides 
-        SET status = 'cancelled' 
+        SET status = 'cancelled'::ride_status_enum 
         WHERE ride_id = :ride_id AND status IN ('requested', 'accepted')
         RETURNING driver_id;
     """)
@@ -156,13 +156,13 @@ def pay_ride(ride_id: int, payload: PaymentSchema, db: Session = Depends(get_db)
     """Processes payment and finalizes the ride state."""
     insert_payment = text("""
         INSERT INTO payments (ride_id, amount, status) 
-        VALUES (:ride_id, :amount, 'completed')
+        VALUES (:ride_id, :amount, 'completed'::payment_status_enum)
     """)
     try:
         db.execute(insert_payment, {"ride_id": ride_id, "amount": payload.amount})
         
         # Update ride to completed
-        update_ride = text("UPDATE rides SET status = 'completed' WHERE ride_id = :ride_id")
+        update_ride = text("UPDATE rides SET status = 'completed'::ride_status_enum WHERE ride_id = :ride_id")
         db.execute(update_ride, {"ride_id": ride_id})
         
         db.commit()
